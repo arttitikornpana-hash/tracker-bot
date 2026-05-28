@@ -347,3 +347,65 @@ def get_sheet():
         )
 
     return sheet
+
+
+def format_reply(product: dict, category: str, history: list) -> str:
+    name = product["name"]
+    price = product["price"]
+    amount = product["amount"]
+    unit = product["unit"]
+    ppu = product["price_per_unit"]
+
+    lines = [
+        f"✅ บันทึกแล้ว: {name}  [{category}]",
+        f"ราคา: {price:.0f} ฿  |  {amount:.0f} {unit}",
+        f"ราคา/{unit}: {ppu:.2f} ฿",
+    ]
+
+    if history:
+        # ดึงข้อมูลทั้งหมด
+        all_ppu = [float(r["ราคา/หน่วย (฿)"]) for r in history]
+        all_prices = [float(r["ราคา (฿)"]) for r in history]
+
+        min_ppu = min(all_ppu)
+        max_ppu = max(all_ppu)
+        avg_ppu = sum(all_ppu) / len(all_ppu)
+
+        last = history[-1]
+        last_ppu = float(last["ราคา/หน่วย (฿)"])
+        last_date = last["วันที่-เวลา"][:10]
+
+        diff_avg = ((ppu - avg_ppu) / avg_ppu * 100) if avg_ppu > 0 else 0
+
+        lines.append("──────────────")
+        lines.append(f"📦 ซื้อทั้งหมด {len(history)} ครั้ง")
+        lines.append(f"🕒 ล่าสุด: {last_date}")
+
+        lines.append(
+            f"📊 ช่วงราคา: {min_ppu:.2f} – {max_ppu:.2f} ฿/{unit}"
+        )
+
+        lines.append(
+            f"📈 ราคาเฉลี่ย: {avg_ppu:.2f} ฿/{unit}"
+        )
+
+        if ppu < avg_ppu:
+            lines.append(
+                f"🟢 รอบนี้ถูกกว่าค่าเฉลี่ย {abs(diff_avg):.1f}%"
+            )
+        elif ppu > avg_ppu:
+            lines.append(
+                f"🔴 รอบนี้แพงกว่าค่าเฉลี่ย +{diff_avg:.1f}%"
+            )
+        else:
+            lines.append("⚪ ราคาใกล้เคียงค่าเฉลี่ย")
+
+        # cheapest check
+        if ppu == min_ppu:
+            lines.append("🏆 นี่คือราคาที่ถูกที่สุดที่เคยซื้อ!")
+
+    else:
+        lines.append("──────────────")
+        lines.append("บันทึกครั้งแรก จะเปรียบเทียบได้ในครั้งถัดไป")
+
+    return "\n".join(lines)
