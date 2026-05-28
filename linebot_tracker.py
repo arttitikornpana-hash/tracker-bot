@@ -89,7 +89,36 @@ def get_sheet():
     return sheet
 
 
+```python
 def ensure_header(sheet):
+
+    headers = [
+        "วันที่-เวลา",
+        "ชื่อสินค้า",
+        "category",
+        "ราคา (฿)",
+        "ปริมาณ",
+        "หน่วย",
+        "ราคา/หน่วย (฿)"
+    ]
+
+    current = sheet.row_values(1)
+
+    # ไม่มี header
+    if not current:
+        sheet.insert_row(headers, 1)
+        return
+
+    # header ไม่ตรง → reset ใหม่
+    if current != headers:
+
+        # ลบ row แรก
+        sheet.delete_rows(1)
+
+        # ใส่ header ใหม่
+        sheet.insert_row(headers, 1)
+```
+
     headers = [
         "วันที่-เวลา",
         "ชื่อสินค้า",
