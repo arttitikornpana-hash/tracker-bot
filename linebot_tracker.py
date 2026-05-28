@@ -410,14 +410,12 @@ def format_reply(product: dict, category: str, history: list) -> str:
 
     return "\n".join(lines)
 
+
 CATEGORY_ALIAS = {
     "โปรตีน": "นม/โปรตีน",
     "นม": "นม/โปรตีน",
-    "ของกิน": "อาหารสำเร็จรูป",
     "สด": "ของสด",
+    "แห้ง": "ของแห้ง",
 }
 
-arg = text.replace("สรุป", "").strip()
-
-arg = text.replace("สรุป", "").strip()
 arg = CATEGORY_ALIAS.get(arg, arg)
