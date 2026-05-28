@@ -31,6 +31,8 @@ from google.oauth2.service_account import (
 )
 
 # ─────────────────────────────
+# APP
+# ─────────────────────────────
 
 app = Flask(__name__)
 
@@ -60,7 +62,7 @@ handler = WebhookHandler(
 )
 
 # ─────────────────────────────
-# Categories
+# CATEGORY
 # ─────────────────────────────
 
 CATEGORIES = [
@@ -81,10 +83,11 @@ CATEGORY_ALIAS = {
     "แห้ง": "ของแห้ง",
 }
 
-pending = {}
+# user_id -> category
+pending_category = {}
 
 # ─────────────────────────────
-# Google Sheet
+# GOOGLE SHEET
 # ─────────────────────────────
 
 def get_sheet():
@@ -99,7 +102,9 @@ def get_sheet():
         scopes=scopes
     )
 
-    client = gspread.authorize(creds)
+    client = gspread.authorize(
+        creds
+    )
 
     spreadsheet = client.open_by_key(
         SPREADSHEET_ID
@@ -142,21 +147,36 @@ def ensure_header(sheet):
 
         sheet.clear()
 
-        sheet.insert_row(headers, 1)
+        sheet.insert_row(
+            headers,
+            1
+        )
 
 # ─────────────────────────────
-# Parser
+# PARSE PRODUCT
 # ─────────────────────────────
 
 def parse_price(text: str):
 
     text = text.strip()
 
-    text = re.sub(r'กรัม', 'g', text)
-    text = re.sub(r'มล\.?|มิลลิลิตร', 'ml', text)
-    text = re.sub(r'กก\.?|กิโลกรัม', 'kg', text)
-    text = re.sub(r'ลิตร', 'l', text)
-    text = re.sub(r'บาท', '', text)
+    text = re.sub(
+        r'กรัม',
+        'g',
+        text
+    )
+
+    text = re.sub(
+        r'มล\.?|มิลลิลิตร',
+        'ml',
+        text
+    )
+
+    text = re.sub(
+        r'บาท',
+        '',
+        text
+    )
 
     protein_amount = 0
 
@@ -195,6 +215,11 @@ def parse_price(text: str):
 
     unit = match.group(4).strip()
 
+    price_per_unit = round(
+        price / amount,
+        4
+    )
+
     protein_price = 0
 
     if protein_amount > 0:
@@ -205,20 +230,24 @@ def parse_price(text: str):
         )
 
     return {
+
         "name": name,
+
         "price": price,
+
         "amount": amount,
+
         "unit": unit,
-        "price_per_unit": round(
-            price / amount,
-            4
-        ),
+
+        "price_per_unit": price_per_unit,
+
         "protein_amount": protein_amount,
+
         "protein_price": protein_price,
     }
 
 # ─────────────────────────────
-# Sheet Save
+# SAVE
 # ─────────────────────────────
 
 def save_to_sheet(
@@ -232,33 +261,47 @@ def save_to_sheet(
     )
 
     sheet.append_row([
+
         now,
+
         product["name"],
+
         category,
+
         product["price"],
+
         product["amount"],
+
         product["unit"],
+
         product["price_per_unit"],
+
         product["protein_amount"],
+
         product["protein_price"],
     ])
 
 # ─────────────────────────────
-# History
+# HISTORY
 # ─────────────────────────────
 
-def get_history(sheet, name):
+def get_history(
+    sheet,
+    name
+):
 
     records = sheet.get_all_records()
 
     return [
+
         r for r in records
+
         if r["ชื่อสินค้า"].strip()
         == name.strip()
     ]
 
 # ─────────────────────────────
-# Reply
+# REPLY
 # ─────────────────────────────
 
 def format_reply(
@@ -286,11 +329,17 @@ def format_reply(
     ]
 
     lines = [
+
         f"✅ {name}",
+
         f"[{category}]",
+
         "",
+
         f"💰 {price:.0f}฿",
+
         f"⚖️ {amount:.0f}{unit}",
+
         f"📊 {ppu:.2f}฿/{unit}",
     ]
 
@@ -307,7 +356,11 @@ def format_reply(
     if history:
 
         all_ppu = [
-            float(r["ราคา/หน่วย (฿)"])
+
+            float(
+                r["ราคา/หน่วย (฿)"]
+            )
+
             for r in history
         ]
 
@@ -349,17 +402,15 @@ def format_reply(
     else:
 
         lines.append("")
-        lines.append(
-            "🆕 ซื้อครั้งแรก"
-        )
+        lines.append("🆕 ซื้อครั้งแรก")
 
     return "\n".join(lines)
 
 # ─────────────────────────────
-# Quick Reply
+# QUICK REPLY
 # ─────────────────────────────
 
-def make_category_reply(name):
+def make_category_selector():
 
     buttons = [
 
@@ -377,7 +428,7 @@ def make_category_reply(name):
 
     return TextSendMessage(
 
-        text=f'"{name}" อยู่หมวดไหน?',
+        text="เลือกหมวดสินค้าก่อน 👇",
 
         quick_reply=QuickReply(
             items=buttons
@@ -385,7 +436,7 @@ def make_category_reply(name):
     )
 
 # ─────────────────────────────
-# Summary
+# SUMMARY
 # ─────────────────────────────
 
 def cmd_summary(sheet):
@@ -398,7 +449,10 @@ def cmd_summary(sheet):
     latest = {}
 
     for r in records:
-        latest[r["ชื่อสินค้า"]] = r
+
+        latest[
+            r["ชื่อสินค้า"]
+        ] = r
 
     lines = [
         f"📦 {len(latest)} รายการ\n"
@@ -406,27 +460,13 @@ def cmd_summary(sheet):
 
     for name, r in latest.items():
 
-        price = float(r["ราคา (฿)"])
-
-        ppu = float(
-            r["ราคา/หน่วย (฿)"]
-        )
-
-        unit = r["หน่วย"]
-
-        cat = r["category"]
-
         lines.append(
-            f"• {name} [{cat}] "
-            f"{price:.0f}฿ "
-            f"({ppu:.2f}฿/{unit})"
+            f"• {name} "
+            f"[{r['category']}]"
         )
 
     return "\n".join(lines)
 
-# ─────────────────────────────
-# Category Summary
-# ─────────────────────────────
 
 def cmd_summary_by_cat(
     sheet,
@@ -475,23 +515,35 @@ def cmd_summary_by_cat(
 # ─────────────────────────────
 
 HELP_TEXT = """
-📌 ตัวอย่าง:
+📌 วิธีใช้
+
+1.พิมพ์:
+เพิ่มสินค้า
+
+2.เลือก category
+
+3.พิมพ์สินค้า เช่น:
 
 ไข่ไก่ 79 บาท 10 ฟอง
-แลคตาซอย 20 บาท 125ml
-Ally clear protein 47 บาท 30g โปรตีน25g
 
-📋 คำสั่ง:
+Ally clear protein
+47 บาท 30g โปรตีน25g
+
+📋 คำสั่ง
 
 สรุป
 สรุป โปรตีน
+ช่วย
 """
 
 # ─────────────────────────────
-# Webhook
+# CALLBACK
 # ─────────────────────────────
 
-@app.route("/callback", methods=["POST"])
+@app.route(
+    "/callback",
+    methods=["POST"]
+)
 
 def callback():
 
@@ -518,7 +570,7 @@ def callback():
     return "OK"
 
 # ─────────────────────────────
-# Text Handler
+# TEXT HANDLER
 # ─────────────────────────────
 
 @handler.add(
@@ -538,7 +590,22 @@ def handle_text(event):
 
         ensure_header(sheet)
 
-        # category selected
+        # เริ่มเพิ่มสินค้า
+        if text in [
+            "เพิ่ม",
+            "เพิ่มสินค้า"
+        ]:
+
+            line_bot_api.reply_message(
+
+                event.reply_token,
+
+                make_category_selector()
+            )
+
+            return
+
+        # เลือก category
         if text.startswith("__cat__"):
 
             category = text.replace(
@@ -546,37 +613,19 @@ def handle_text(event):
                 ""
             ).strip()
 
-            if user_id in pending:
-
-                product = pending.pop(
-                    user_id
-                )
-
-                history = get_history(
-                    sheet,
-                    product["name"]
-                )
-
-                save_to_sheet(
-                    sheet,
-                    product,
-                    category
-                )
-
-                reply = format_reply(
-                    product,
-                    category,
-                    history
-                )
-
-            else:
-
-                reply = "ไม่พบข้อมูล"
+            pending_category[
+                user_id
+            ] = category
 
             line_bot_api.reply_message(
+
                 event.reply_token,
+
                 TextSendMessage(
-                    text=reply
+                    text=(
+                        f"เลือก [{category}] แล้ว ✅\n\n"
+                        "พิมพ์สินค้าได้เลย"
+                    )
                 )
             )
 
@@ -602,7 +651,9 @@ def handle_text(event):
                 reply = cmd_summary(sheet)
 
             line_bot_api.reply_message(
+
                 event.reply_token,
+
                 TextSendMessage(
                     text=reply
                 )
@@ -618,7 +669,9 @@ def handle_text(event):
         ]:
 
             line_bot_api.reply_message(
+
                 event.reply_token,
+
                 TextSendMessage(
                     text=HELP_TEXT
                 )
@@ -631,11 +684,39 @@ def handle_text(event):
 
         if product:
 
-            pending[user_id] = product
+            if user_id not in pending_category:
 
-            reply_msg = make_category_reply(
-                product["name"]
-            )
+                reply_msg = TextSendMessage(
+                    text=(
+                        "พิมพ์ 'เพิ่มสินค้า' ก่อน 👇"
+                    )
+                )
+
+            else:
+
+                category = pending_category[
+                    user_id
+                ]
+
+                history = get_history(
+                    sheet,
+                    product["name"]
+                )
+
+                save_to_sheet(
+                    sheet,
+                    product,
+                    category
+                )
+
+                reply_msg = TextSendMessage(
+
+                    text=format_reply(
+                        product,
+                        category,
+                        history
+                    )
+                )
 
         else:
 
@@ -648,14 +729,18 @@ def handle_text(event):
             )
 
         line_bot_api.reply_message(
+
             event.reply_token,
+
             reply_msg
         )
 
     except Exception as e:
 
         line_bot_api.reply_message(
+
             event.reply_token,
+
             TextSendMessage(
                 text=f"ERROR: {str(e)}"
             )
