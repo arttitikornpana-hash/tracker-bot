@@ -497,7 +497,55 @@ def handle_text(event):
                 ""
             ).strip()
 
-            arg = CATEGORY_ALIAS.get(arg, arg)
+            ```python
+def cmd_summary_by_cat(sheet, cat: str):
+
+    # map alias
+    cat = CATEGORY_ALIAS.get(
+        cat.strip(),
+        cat.strip()
+    )
+
+    records = sheet.get_all_records()
+
+    filtered = []
+
+    for r in records:
+
+        row_cat = str(
+            r.get("category", "")
+        ).strip()
+
+        if row_cat == cat:
+            filtered.append(r)
+
+    if not filtered:
+        return f"ไม่มีสินค้าใน category: {cat}"
+
+    latest = {}
+
+    for r in filtered:
+        latest[r["ชื่อสินค้า"]] = r
+
+    lines = [
+        f"[{cat}] {len(latest)} ชนิด\n"
+    ]
+
+    for name, r in latest.items():
+
+        ppu = float(r["ราคา/หน่วย (฿)"])
+
+        unit = r["หน่วย"]
+
+        price = float(r["ราคา (฿)"])
+
+        lines.append(
+            f"• {name} {price:.0f}฿ ({ppu:.2f}฿/{unit})"
+        )
+
+    return "\n".join(lines)
+```
+
 
             if arg:
 
