@@ -320,3 +320,30 @@ def handle_image(event):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
+
+def get_sheet():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+
+    creds = Credentials.from_service_account_file(
+        "credentials.json",
+        scopes=scopes
+    )
+
+    client = gspread.authorize(creds)
+
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+
+    try:
+        sheet = spreadsheet.worksheet(SHEET_NAME)
+    except:
+        sheet = spreadsheet.add_worksheet(
+            title=SHEET_NAME,
+            rows=1000,
+            cols=10
+        )
+
+    return sheet
