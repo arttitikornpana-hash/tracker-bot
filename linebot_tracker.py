@@ -1,259 +1,26 @@
 ```python
-import os
-import re
-
-from datetime import datetime
-
-from flask import Flask, request, abort
-
-from linebot import (
-    LineBotApi,
-    WebhookHandler
-)
-
-from linebot.exceptions import (
-    InvalidSignatureError
-)
-
-from linebot.models import (
-    MessageEvent,
-    TextMessage,
-    TextSendMessage,
-    QuickReply,
-    QuickReplyButton,
-    MessageAction
-)
-
-import gspread
-
-from google.oauth2.service_account import (
-    Credentials
-)
-
 # ─────────────────────────────
-# APP
+# STATE
 # ─────────────────────────────
-
-app = Flask(__name__)
-
-LINE_CHANNEL_SECRET = os.environ.get(
-    "LINE_CHANNEL_SECRET",
-    ""
-)
-
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get(
-    "LINE_CHANNEL_ACCESS_TOKEN",
-    ""
-)
-
-SPREADSHEET_ID = os.environ.get(
-    "SPREADSHEET_ID",
-    ""
-)
-
-SHEET_NAME = "prices"
-
-line_bot_api = LineBotApi(
-    LINE_CHANNEL_ACCESS_TOKEN
-)
-
-handler = WebhookHandler(
-    LINE_CHANNEL_SECRET
-)
-
-# ─────────────────────────────
-# CATEGORY
-# ─────────────────────────────
-
-CATEGORIES = [
-    "ของสด",
-    "ของแห้ง",
-    "นม/โปรตีน",
-    "ของใช้",
-    "เครื่องดื่ม",
-    "ขนม",
-    "สุขภาพ",
-    "อื่นๆ"
-]
-
-CATEGORY_ALIAS = {
-    "โปรตีน": "นม/โปรตีน",
-    "นม": "นม/โปรตีน",
-    "สด": "ของสด",
-    "แห้ง": "ของแห้ง",
-}
 
 # user_id -> category
 pending_category = {}
 
-# ─────────────────────────────
-# GOOGLE SHEET
-# ─────────────────────────────
+# user_id -> image_id
+pending_image = {}
 
-def get_sheet():
-
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
-
-    creds = Credentials.from_service_account_file(
-        "credentials.json",
-        scopes=scopes
-    )
-
-    client = gspread.authorize(
-        creds
-    )
-
-    spreadsheet = client.open_by_key(
-        SPREADSHEET_ID
-    )
-
-    try:
-
-        sheet = spreadsheet.worksheet(
-            SHEET_NAME
-        )
-
-    except:
-
-        sheet = spreadsheet.add_worksheet(
-            title=SHEET_NAME,
-            rows=1000,
-            cols=20
-        )
-
-    return sheet
-
-
-def ensure_header(sheet):
-
-    headers = [
-        "วันที่-เวลา",
-        "ชื่อสินค้า",
-        "category",
-        "ราคา (฿)",
-        "ปริมาณ",
-        "หน่วย",
-        "ราคา/หน่วย (฿)",
-        "โปรตีน (g)",
-        "ราคา/โปรตีน (฿)"
-    ]
-
-    current = sheet.row_values(1)
-
-    if current != headers:
-
-        sheet.clear()
-
-        sheet.insert_row(
-            headers,
-            1
-        )
+# user_id -> waiting state
+pending_waiting_product = {}
 
 # ─────────────────────────────
-# PARSE PRODUCT
-# ─────────────────────────────
-
-def parse_price(text: str):
-
-    text = text.strip()
-
-    text = re.sub(
-        r'กรัม',
-        'g',
-        text
-    )
-
-    text = re.sub(
-        r'มล\.?|มิลลิลิตร',
-        'ml',
-        text
-    )
-
-    text = re.sub(
-        r'บาท',
-        '',
-        text
-    )
-
-    protein_amount = 0
-
-    protein_match = re.search(
-        r'โปรตีน\s*([\d.]+)\s*g',
-        text
-    )
-
-    if protein_match:
-
-        protein_amount = float(
-            protein_match.group(1)
-        )
-
-        text = re.sub(
-            r'โปรตีน\s*[\d.]+\s*g',
-            '',
-            text
-        )
-
-    pattern = r'^(.+?)\s+([\d.]+)\s+([\d.]+)\s*([a-zA-Zก-๙]+)$'
-
-    match = re.match(
-        pattern,
-        text.strip()
-    )
-
-    if not match:
-        return None
-
-    name = match.group(1).strip()
-
-    price = float(match.group(2))
-
-    amount = float(match.group(3))
-
-    unit = match.group(4).strip()
-
-    price_per_unit = round(
-        price / amount,
-        4
-    )
-
-    protein_price = 0
-
-    if protein_amount > 0:
-
-        protein_price = round(
-            price / protein_amount,
-            4
-        )
-
-    return {
-
-        "name": name,
-
-        "price": price,
-
-        "amount": amount,
-
-        "unit": unit,
-
-        "price_per_unit": price_per_unit,
-
-        "protein_amount": protein_amount,
-
-        "protein_price": protein_price,
-    }
-
-# ─────────────────────────────
-# SAVE
+# SAVE TO SHEET
 # ─────────────────────────────
 
 def save_to_sheet(
     sheet,
     product,
-    category
+    category,
+    image_id=""
 ):
 
     now = datetime.now().strftime(
@@ -279,135 +46,12 @@ def save_to_sheet(
         product["protein_amount"],
 
         product["protein_price"],
+
+        image_id
     ])
 
 # ─────────────────────────────
-# HISTORY
-# ─────────────────────────────
-
-def get_history(
-    sheet,
-    name
-):
-
-    records = sheet.get_all_records()
-
-    return [
-
-        r for r in records
-
-        if r["ชื่อสินค้า"].strip()
-        == name.strip()
-    ]
-
-# ─────────────────────────────
-# REPLY
-# ─────────────────────────────
-
-def format_reply(
-    product,
-    category,
-    history
-):
-
-    name = product["name"]
-
-    price = product["price"]
-
-    amount = product["amount"]
-
-    unit = product["unit"]
-
-    ppu = product["price_per_unit"]
-
-    protein_amount = product[
-        "protein_amount"
-    ]
-
-    protein_price = product[
-        "protein_price"
-    ]
-
-    lines = [
-
-        f"✅ {name}",
-
-        f"[{category}]",
-
-        "",
-
-        f"💰 {price:.0f}฿",
-
-        f"⚖️ {amount:.0f}{unit}",
-
-        f"📊 {ppu:.2f}฿/{unit}",
-    ]
-
-    if protein_amount > 0:
-
-        lines.append(
-            f"💪 โปรตีน {protein_amount:.0f}g"
-        )
-
-        lines.append(
-            f"💸 {protein_price:.2f}฿/โปรตีนg"
-        )
-
-    if history:
-
-        all_ppu = [
-
-            float(
-                r["ราคา/หน่วย (฿)"]
-            )
-
-            for r in history
-        ]
-
-        avg_ppu = (
-            sum(all_ppu)
-            / len(all_ppu)
-        )
-
-        diff = (
-            (ppu - avg_ppu)
-            / avg_ppu
-            * 100
-        ) if avg_ppu > 0 else 0
-
-        lines.append("")
-
-        lines.append(
-            f"📦 ซื้อซ้ำครั้งที่ {len(history)+1}"
-        )
-
-        if diff > 25:
-
-            lines.append(
-                f"🚨 แพงกว่าปกติ {diff:.1f}%"
-            )
-
-        elif diff > 0:
-
-            lines.append(
-                f"🔴 แพงขึ้น {diff:.1f}%"
-            )
-
-        elif diff < 0:
-
-            lines.append(
-                f"🟢 ถูกลง {abs(diff):.1f}%"
-            )
-
-    else:
-
-        lines.append("")
-        lines.append("🆕 ซื้อครั้งแรก")
-
-    return "\n".join(lines)
-
-# ─────────────────────────────
-# QUICK REPLY
+# CATEGORY QUICK REPLY
 # ─────────────────────────────
 
 def make_category_selector():
@@ -436,138 +80,59 @@ def make_category_selector():
     )
 
 # ─────────────────────────────
-# SUMMARY
+# IMAGE HANDLER
 # ─────────────────────────────
 
-def cmd_summary(sheet):
-
-    records = sheet.get_all_records()
-
-    if not records:
-        return "ยังไม่มีข้อมูล"
-
-    latest = {}
-
-    for r in records:
-
-        latest[
-            r["ชื่อสินค้า"]
-        ] = r
-
-    lines = [
-        f"📦 {len(latest)} รายการ\n"
-    ]
-
-    for name, r in latest.items():
-
-        lines.append(
-            f"• {name} "
-            f"[{r['category']}]"
-        )
-
-    return "\n".join(lines)
-
-
-def cmd_summary_by_cat(
-    sheet,
-    cat
-):
-
-    cat = CATEGORY_ALIAS.get(
-        cat.strip(),
-        cat.strip()
-    )
-
-    records = sheet.get_all_records()
-
-    filtered = []
-
-    for r in records:
-
-        row_cat = str(
-            r.get("category", "")
-        ).strip()
-
-        if row_cat == cat:
-
-            filtered.append(r)
-
-    if not filtered:
-
-        return (
-            f"ไม่มีสินค้าใน category: {cat}"
-        )
-
-    lines = [
-        f"[{cat}] {len(filtered)} รายการ\n"
-    ]
-
-    for r in filtered:
-
-        lines.append(
-            f"• {r['ชื่อสินค้า']}"
-        )
-
-    return "\n".join(lines)
-
-# ─────────────────────────────
-# HELP
-# ─────────────────────────────
-
-HELP_TEXT = """
-📌 วิธีใช้
-
-1.พิมพ์:
-เพิ่มสินค้า
-
-2.เลือก category
-
-3.พิมพ์สินค้า เช่น:
-
-ไข่ไก่ 79 บาท 10 ฟอง
-
-Ally clear protein
-47 บาท 30g โปรตีน25g
-
-📋 คำสั่ง
-
-สรุป
-สรุป โปรตีน
-ช่วย
-"""
-
-# ─────────────────────────────
-# CALLBACK
-# ─────────────────────────────
-
-@app.route(
-    "/callback",
-    methods=["POST"]
+@handler.add(
+    MessageEvent,
+    message=ImageMessage
 )
 
-def callback():
+def handle_image(event):
 
-    signature = request.headers.get(
-        "X-Line-Signature",
-        ""
-    )
+    user_id = event.source.user_id
 
-    body = request.get_data(
-        as_text=True
-    )
+    image_id = event.message.id
 
-    try:
+    # ยังไม่ได้เลือก category
+    if user_id not in pending_category:
 
-        handler.handle(
-            body,
-            signature
+        line_bot_api.reply_message(
+
+            event.reply_token,
+
+            TextSendMessage(
+                text=(
+                    "พิมพ์ 'เพิ่มสินค้า' ก่อน 👇"
+                )
+            )
         )
 
-    except InvalidSignatureError:
+        return
 
-        abort(400)
+    # เก็บรูป
+    pending_image[user_id] = image_id
 
-    return "OK"
+    pending_waiting_product[user_id] = True
+
+    category = pending_category[user_id]
+
+    line_bot_api.reply_message(
+
+        event.reply_token,
+
+        TextSendMessage(
+
+            text=(
+                f"📸 รับรูปแล้ว [{category}] ✅\n\n"
+                "พิมพ์ข้อมูลสินค้าได้เลย\n\n"
+                "เช่น:\n"
+                "ไข่ไก่ 79 บาท 10 ฟอง\n\n"
+                "หรือ:\n"
+                "Ally clear protein 47 บาท 30g โปรตีน25g"
+            )
+        )
+    )
 
 # ─────────────────────────────
 # TEXT HANDLER
@@ -624,7 +189,7 @@ def handle_text(event):
                 TextSendMessage(
                     text=(
                         f"เลือก [{category}] แล้ว ✅\n\n"
-                        "พิมพ์สินค้าได้เลย"
+                        "ส่งรูปสินค้าได้เลย 📸"
                     )
                 )
             )
@@ -684,12 +249,18 @@ def handle_text(event):
 
         if product:
 
+            # ยังไม่ได้เลือก category
             if user_id not in pending_category:
 
                 reply_msg = TextSendMessage(
-                    text=(
-                        "พิมพ์ 'เพิ่มสินค้า' ก่อน 👇"
-                    )
+                    text="พิมพ์ 'เพิ่มสินค้า' ก่อน 👇"
+                )
+
+            # ยังไม่ได้ส่งรูป
+            elif user_id not in pending_image:
+
+                reply_msg = TextSendMessage(
+                    text="ส่งรูปสินค้าก่อน 📸"
                 )
 
             else:
@@ -697,6 +268,11 @@ def handle_text(event):
                 category = pending_category[
                     user_id
                 ]
+
+                image_id = pending_image.get(
+                    user_id,
+                    ""
+                )
 
                 history = get_history(
                     sheet,
@@ -706,7 +282,19 @@ def handle_text(event):
                 save_to_sheet(
                     sheet,
                     product,
-                    category
+                    category,
+                    image_id
+                )
+
+                # clear state
+                pending_image.pop(
+                    user_id,
+                    None
+                )
+
+                pending_waiting_product.pop(
+                    user_id,
+                    None
                 )
 
                 reply_msg = TextSendMessage(
@@ -745,17 +333,4 @@ def handle_text(event):
                 text=f"ERROR: {str(e)}"
             )
         )
-
-# ─────────────────────────────
-
-if __name__ == "__main__":
-
-    port = int(
-        os.environ.get("PORT", 5000)
-    )
-
-    app.run(
-        host="0.0.0.0",
-        port=port
-    )
 ```
