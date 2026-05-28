@@ -591,3 +591,51 @@ if __name__ == "__main__":
         port=port
     )
 ```
+
+```python id="mxq25p"
+if text.startswith("__cat__"):
+
+    category = text.replace(
+        "__cat__",
+        ""
+    ).strip()
+
+    if user_id in pending:
+
+        product = pending.pop(user_id)
+
+        history = get_history(
+            sheet,
+            product["name"]
+        )
+
+        # save ก่อน
+        save_to_sheet(
+            sheet,
+            product,
+            category
+        )
+
+        # แล้วค่อย reply
+        reply_msg = TextSendMessage(
+            text=format_reply(
+                product,
+                category,
+                history
+            )
+        )
+
+    else:
+
+        reply_msg = TextSendMessage(
+            text="ไม่พบข้อมูลสินค้า ลองใหม่อีกครั้ง"
+        )
+
+    line_bot_api.reply_message(
+        event.reply_token,
+        reply_msg
+    )
+
+    return
+```
+
