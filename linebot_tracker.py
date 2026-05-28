@@ -26,7 +26,7 @@ SHEET_NAME = "prices"
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler      = WebhookHandler(LINE_CHANNEL_SECRET)
 
-CATEGORIES = ["ของสด","ของแห้ง","นม/โปรตีน","ของใช้","เครื่องดื่ม","ขนม","สุขภาพ","อื่นๆ"]
+CATEGORIES = ["นม/โปรตีน","ของสด","ของแห้ง","ของใช้","เครื่องดื่ม","ขนม","สุขภาพ","อื่นๆ"]
 
 # state: user_id → {"step": "wait_image"|"wait_product", "category": str, "image_id": str|None}
 state = {}
@@ -51,8 +51,7 @@ def ensure_header(sheet):
 # ─── Parser ───────────────────────────────────────────────────
 def parse_product(text: str):
     """
-    รับ: "Ally clear protein 47 บาท 30g โปรตีน25g"
-         "ยาสีฟัน 139 บาท 160g"
+    รับ:  "ยาสีฟัน 139 บาท 160g"
          "ไข่ไก่ 79 บาท 10 ฟอง"
     คืน: dict หรือ None
     """
