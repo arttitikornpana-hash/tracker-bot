@@ -419,3 +419,29 @@ CATEGORY_ALIAS = {
 }
 
 arg = CATEGORY_ALIAS.get(arg, arg)
+
+
+def ensure_header(sheet):
+    headers = [
+        "วันที่-เวลา",
+        "ชื่อสินค้า",
+        "category",
+        "ราคา (฿)",
+        "ปริมาณ",
+        "หน่วย",
+        "ราคา/หน่วย (฿)"
+    ]
+
+    current = sheet.row_values(1)
+
+    # ถ้ายังไม่มี header เลย
+    if not current:
+        sheet.insert_row(headers, 1)
+        return
+
+    # ถ้ายังไม่มี category
+    if "category" not in current:
+        current.insert(2, "category")
+        sheet.delete_rows(1)
+        sheet.insert_row(current, 1)
+        
